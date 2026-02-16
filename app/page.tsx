@@ -1,65 +1,91 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from 'react';
+import { SteamGame, WrappedApiResponse } from '@/types';
+import GameCard from '@/components/GameCard';
 
 export default function Home() {
+  // --- STATE ---
+  const [steamId, setSteamId] = useState<string>('');
+  const [games, setGames] = useState<SteamGame[] | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // --- LOGIC ---
+  const handleFetchWrapped = async (formData: FormData) => {
+    const submittedUrl = formData.get('steamUrl') as string;
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    setGames(null);
+    
+    try {
+      // Fetch from backend proxy
+      const res = await fetch(`/api/steam?steamUrl=${encodeURIComponent(submittedUrl)}`);
+      const data: WrappedApiResponse = await res.json();
+      
+      // Throw response error (if any) to catch{} block
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to fetch data');
+      }
+      
+      // Sort games array (by playtime)
+      if (data.games) {
+        const sortedGames = [...data.games].sort((a, b) => b.playtime_forever - a.playtime_forever);
+        setGames(sortedGames.slice(0, 10));
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        setErrorMsg(error.message);
+      } else {
+        setErrorMsg('An unknown error occurred');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- UI ---
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen p-8 text-white bg-slate-950 font-sans">
+      <div className="max-w-2xl mx-auto">
+        <h1 className="text-4xl font-bold mb-8 text-center text-green-400">🎮 Gaming Wrapped</h1>
+        
+        <form action={handleFetchWrapped} className="mb-8 flex gap-4">
+          <input 
+            type="text" 
+            name="steamUrl" 
+            placeholder="Paste Steam Profile URL or ID..." 
+            className="flex-1 px-4 py-2 rounded bg-slate-800 border border-slate-700 focus:outline-none focus:border-green-400 text-white transition-colors"
+            required
+          />
+
+          <button type="submit" disabled={isLoading} className="px-6 py-2 rounded bg-green-500 hover:bg-green-600 text-black font-bold disabled:opacity-50 transition-colors">
+            {isLoading ? 'Wrapping...' : 'Wrap It!'}
+          </button>
+        </form>
+        
+        {/* Render loading state */}
+        {isLoading && (
+          <div className="text-center text-green-400 animate-pulse mb-8 font-bold text-lg">
+            Fetching library, this might take a second...
+          </div>
+        )}
+        
+        {/* Render error alert */}
+        {errorMsg && (
+          <div className="p-4 mb-8 bg-red-900/30 border-l-4 border-red-500 rounded text-red-200">
+            <span className="font-bold mr-2">Error:</span> 
+            {errorMsg}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-4">
+          {games && games.map((game, index) => (
+            <GameCard key={game.appid} game={game} rank={index + 1} />
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }
