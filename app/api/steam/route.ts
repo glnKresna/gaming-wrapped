@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { WrappedApiResponse } from '@/types'; 
+import { SteamGame, WishlistedGame } from '@/types';
+
+interface RawSteamGame {
+    appid: number;
+    name: string;
+    playtime_forever: number;
+    img_icon_url: string;
+    [key: string]: unknown; // Ignore random properties from Steam API
+}
 
 export async function GET(request: NextRequest): Promise<NextResponse<WrappedApiResponse>> {
-    // Extract 'steamUrl' from request
     const searchParams = request.nextUrl.searchParams;
     const steamUrl = searchParams.get('steamUrl');
     const apiKey = process.env.STEAM_API_KEY;
 
-    // Guard Clauses for missing input or missing API key
     if (!steamUrl) {
         return NextResponse.json(
             {error: 'Invalid. Please provide a Steam profile URL or ID'}, 
@@ -56,22 +63,157 @@ export async function GET(request: NextRequest): Promise<NextResponse<WrappedApi
             finalSteamId = vanityData.response.steamid;
         }
         
-        // Fetch the actual games using GetOwnedGames and the 64-bit ID
-        const gamesUrl = `http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${apiKey}&steamid=${finalSteamId}&include_appinfo=true&format=json`;
+        // Fetch Profile Data
+        // Steam API endpoint for User Data
+        const profileUrl = `http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=${apiKey}&steamids=${finalSteamId}`;
+        const profileRes = await fetch(profileUrl);
+        
+        if (!profileRes.ok) throw new Error('Failed to fetch Steam profile data');
+        const profileData = await profileRes.json();
+        
+        const player = profileData.response.players[0];
+        if (!player) throw new Error('Steam profile not found');
+
+        const profile = {
+            alias: player.personaname,
+            avatar: player.avatarfull,
+            timecreated: player.timecreated
+        };
+        
+        // Fetch Owned Games (Total stats & Top 10 list)
+        // Steam API endpoint for owned games in User Library
+        const gamesUrl = `http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${apiKey}&steamid=${finalSteamId}&include_appinfo=1&include_played_free_games=1`;
         const gamesRes = await fetch(gamesUrl);
-
-        if (!gamesRes.ok) {
-            throw new Error('Failed to fetch library from Steam');
-        }
-
+        
+        if (!gamesRes.ok) throw new Error('Failed to fetch Steam games library');
         const gamesData = await gamesRes.json();
         
-        // Handle Privacy Settings and return the data
+        // Handles returned empty response object from Steam if the Steam Profile is not found
         if (!gamesData.response || !gamesData.response.games) {
-            throw new Error('No games found. This profile may be set to private, friends only, or has no games on Steam.');
+            throw new Error('Game library is private or empty. Please set your Steam privacy settings to Public.');
         }
 
-        return NextResponse.json({games: gamesData.response.games});
+        const allGames: RawSteamGame[] = gamesData.response.games;
+
+        const totalGamesOwned = gamesData.response.game_count;
+        const playedGames = allGames.filter((game) => game.playtime_forever > 0);
+        const totalGamesPlayed = playedGames.length;
+        const totalPlaytimeMinutes = allGames.reduce((sum, game) => sum + game.playtime_forever, 0);
+        const totalPlaytimeHours = Math.round(totalPlaytimeMinutes / 60);
+
+        const summary = {
+            totalGamesOwned,
+            totalGamesPlayed,
+            totalPlaytimeHours
+        };
+
+        // Top 10 games (for page 2 and 5)
+        const topGames: SteamGame[] = [...allGames]
+            .sort((a, b) => b.playtime_forever - a.playtime_forever)
+            .slice(0, 10)
+            .map(game => ({
+                appid: game.appid,
+                name: game.name,
+                playtime_forever: game.playtime_forever,
+                img_icon_url: game.img_icon_url
+            }));
+        
+        // Fetch Achievements (For Top 3 games only)
+        const top3Games = topGames.slice(0, 3);
+
+        await Promise.all(top3Games.map(async (game) => {
+            try {
+                // Steam API endpoint for User Achievements
+                const achUrl = `http://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?appid=${game.appid}&key=${apiKey}&steamid=${finalSteamId}`;
+                const achRes = await fetch(achUrl);
+                
+                if (!achRes.ok) throw new Error('Game might not have achievements');
+                
+                const achData = await achRes.json();
+                
+                if (achData.playerstats && achData.playerstats.success && achData.playerstats.achievements) {
+                    const unlockedCount = achData.playerstats.achievements.filter((ach: {achieved: number}) => ach.achieved === 1).length;
+                    game.achievementsUnlocked = unlockedCount;
+                } else {
+                    game.achievementsUnlocked = 0;
+                }
+            } catch {
+                game.achievementsUnlocked = 0;
+            }
+        }));
+        
+        // Fetch Store Data
+        const genreCounts: Record<string, number> = {};
+
+        await Promise.all(topGames.map(async (game) => {
+            try {
+                // Steam Store API endpoint
+                const storeUrl = `https://store.steampowered.com/api/appdetails?appids=${game.appid}`;
+                const storeRes = await fetch(storeUrl);
+                
+                if (!storeRes.ok) return;
+                
+                const storeData = await storeRes.json();
+                const appDetails = storeData[game.appid];
+
+                if (appDetails && appDetails.success && appDetails.data.genres) {
+                    appDetails.data.genres.forEach((genre: {description: string}) => {
+                        const genreName = genre.description;
+                        
+                        // Add 1 if it's already in the tally. If not, start it at 1
+                        if (genreCounts[genreName]) {
+                            genreCounts[genreName]++;
+                        } else {
+                            genreCounts[genreName] = 1;
+                        }
+                    });
+                }
+            } catch {
+                console.warn(`Could not fetch store data for AppID ${game.appid}. It may be removed/delisted from Steam.`);
+            }
+        }));
+
+        // Convert promised tally object into the clean GenreStat[] 
+        const topGenres = Object.entries(genreCounts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+        
+        // Fetch User Wishlist
+        let wishlist: WishlistedGame[] = [];
+        
+        try {
+            // Steam Store API Wishlist endpoint
+            const wishlistUrl = `https://store.steampowered.com/wishlist/profiles/${finalSteamId}/wishlistdata/`;
+            const wishlistRes = await fetch(wishlistUrl);
+            
+            if (wishlistRes.ok) {
+                const wishlistData = await wishlistRes.json();
+                
+                if (!wishlistData.success) {
+                    wishlist = Object.entries(wishlistData).map(([appid, details]) => {
+                        const gameDetails = details as { name: string; capsule: string };
+                        
+                        return {
+                            appid: appid,
+                            name: gameDetails.name,
+                            capsule_url: gameDetails.capsule
+                        };
+                    });
+                }
+            }
+        } catch {
+            console.warn(`Could not fetch wishlist for ${finalSteamId}. It might be private.`);
+        }
+        
+        const responsePayload: WrappedApiResponse = {
+            profile,
+            summary,
+            topGames,
+            topGenres,
+            wishlist
+        };
+
+        return NextResponse.json(responsePayload);
         
     } catch (error) {
         if (error instanceof Error) {
