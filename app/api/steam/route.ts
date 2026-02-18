@@ -182,23 +182,39 @@ export async function GET(request: NextRequest): Promise<NextResponse<WrappedApi
         let wishlist: WishlistedGame[] = [];
         
         try {
-            // Steam Store API Wishlist endpoint
-            const wishlistUrl = `https://store.steampowered.com/wishlist/profiles/${finalSteamId}/wishlistdata/`;
+            // Steam API Wishlist endpoint
+            const wishlistUrl = `https://api.steampowered.com/IWishlistService/GetWishlist/v1/?steamid=${finalSteamId}`;
             const wishlistRes = await fetch(wishlistUrl);
             
             if (wishlistRes.ok) {
                 const wishlistData = await wishlistRes.json();
                 
-                if (!wishlistData.success) {
-                    wishlist = Object.entries(wishlistData).map(([appid, details]) => {
-                        const gameDetails = details as { name: string; capsule: string };
-                        
-                        return {
-                            appid: appid,
-                            name: gameDetails.name,
-                            capsule_url: gameDetails.capsule
-                        };
-                    });
+                if (wishlistData.response && wishlistData.response.items) {
+                    const topWishlistItems = wishlistData.response.items.slice(0, 6);
+                    
+                    const fetchedWishlist = await Promise.all(topWishlistItems.map(async (item: { appid: number }) => {
+                        try {
+                            const storeUrl = `https://store.steampowered.com/api/appdetails?appids=${item.appid}`;
+                            const storeRes = await fetch(storeUrl);
+                            if (!storeRes.ok) return null;
+                            
+                            const storeData = await storeRes.json();
+                            const appDetails = storeData[item.appid];
+                            
+                            if (appDetails && appDetails.success) {
+                                return {
+                                    appid: item.appid,
+                                    name: appDetails.data.name,
+                                    capsule_url: appDetails.data.header_image 
+                                };
+                            }
+                        } catch {
+                            return null;
+                        }
+                        return null;
+                    }));
+
+                    wishlist = fetchedWishlist.filter((game) => game !== null) as WishlistedGame[];
                 }
             }
         } catch {
