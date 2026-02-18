@@ -36,10 +36,10 @@ export interface WishlistedGame {
 
 // Master wrapper (to ship to front end)
 export interface WrappedApiResponse {
-    profile?: SteamUserProfile;
-    summary?: GameSummary;
-    topGames?: SteamGame[];
-    topGenres?: GenreStat[];
-    wishlist?: WishlistedGame[];
-    error?: string;
+    profile: SteamUserProfile;
+    summary: GameSummary;
+    topGames: SteamGame[];
+    topGenres: GenreStat[];
+    wishlist: WishlistedGame[];
+    error: string;
 }
