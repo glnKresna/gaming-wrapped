@@ -41,5 +41,4 @@ export interface WrappedApiResponse {
     topGames: SteamGame[];
     topGenres: GenreStat[];
     wishlist: WishlistedGame[];
-    error: string;
 }
