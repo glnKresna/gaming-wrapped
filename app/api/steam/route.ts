@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { WrappedApiResponse } from '@/types'; 
 import { SteamGame, WishlistedGame } from '@/types';
+import { isRateLimited } from '@/lib/rate-limit';
+import { SAFE_ERROR_MESSAGES } from '@/lib/constants';
 
 interface RawSteamGame {
     appid: number;
@@ -10,7 +12,17 @@ interface RawSteamGame {
     [key: string]: unknown; // Ignore random properties from Steam API
 }
 
-export async function GET(request: NextRequest): Promise<NextResponse<WrappedApiResponse>> {
+export async function GET(request: NextRequest) : Promise <NextResponse<WrappedApiResponse | {error: string}>> {
+    // Check Rate Limit
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+
+    if (isRateLimited(ip)) {
+        return NextResponse.json (
+            {error: 'Please wait a minute before generating another Wrapped.'}, 
+            {status: 429}
+        );
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const steamUrl = searchParams.get('steamUrl');
     const apiKey = process.env.STEAM_API_KEY;
@@ -25,7 +37,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<WrappedApi
     if (!apiKey) {
         return NextResponse.json(
             {error: 'Server configuration error'}, 
-            {status: 500}
+            {status: 500} 
         );
     }
 
@@ -232,11 +244,16 @@ export async function GET(request: NextRequest): Promise<NextResponse<WrappedApi
         return NextResponse.json(responsePayload);
         
     } catch (error) {
+        // Log error to server console (for debugging purposes)
+        console.error("[Steam API Error]:", error);
+
         if (error instanceof Error) {
-            return NextResponse.json(
-                {error: error.message}, 
-                {status: 500}
-            );
+            if (SAFE_ERROR_MESSAGES.includes(error.message)) {
+                return NextResponse.json(
+                    {error: error.message}, 
+                    {status: 400}
+                );
+            }
         }
         
         return NextResponse.json(
