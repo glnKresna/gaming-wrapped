@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { WrappedApiResponse } from '@/types'; 
 import { SteamGame, WishlistedGame } from '@/types';
-import { isRateLimited } from '@/lib/rate-limit';
+import { ratelimit } from '@/lib/rate-limit';
 import { SAFE_ERROR_MESSAGES } from '@/lib/constants';
 
 interface RawSteamGame {
@@ -16,11 +16,17 @@ export async function GET(request: NextRequest) : Promise <NextResponse<WrappedA
     // Check Rate Limit
     const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
 
-    if (isRateLimited(ip)) {
-        return NextResponse.json (
-            {error: 'Please wait a minute before generating another Wrapped.'}, 
-            {status: 429}
-        );
+    try {
+        const { success } = await ratelimit.limit(ip);
+
+        if (!success) {
+            return NextResponse.json (
+                {error: 'Please wait a minute before generating another Wrapped.'}, 
+                {status: 429}
+            );
+        }
+    } catch (error) {
+        console.error("Redis Rate Limiter Error:", error);
     }
 
     const searchParams = request.nextUrl.searchParams;
