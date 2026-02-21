@@ -33,19 +33,19 @@ To run this project on your own machine, you will need to generate a free Steam 
    ```
 
 2. Install the dependencies (this project uses `pnpm`):
-```bash
-pnpm install
-```
+    ```bash
+    pnpm install
+    ```
 
 3. Set up your environment variables:
-Create a `.env.local` file in the root directory and add your Steam API key:
-```
-STEAM_API_KEY=your_steam_api_key_here
-```
+    Create a `.env.local` file in the root directory and add your Steam API key:
+    ```
+    STEAM_API_KEY=your_steam_api_key_here
+    ```
 
 4. Start the development server:
-```bash
-pnpm dev
-```
+    ```bash
+    pnpm dev
+    ```
 
 5. Open http://localhost:3000 in your browser to see the app running.
