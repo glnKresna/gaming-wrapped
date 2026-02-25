@@ -13,7 +13,7 @@ export default function Page4({ topGenres }: Page4Props) {
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-8 snap-center relative z-10 w-full">
             <h2 className="text-3xl md:text-5xl font-black text-white mb-12 text-center tracking-tighter drop-shadow-lg">
-                Your Gaming <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1A9FFF] to-[#4EB5FF] filter drop-shadow-[0_0_20px_rgba(26,159,255,0.4)]">DNA</span>
+                Your Gaming <span className="text-transparent bg-clip-text bg-linear-to-r from-[#1A9FFF] to-[#4EB5FF] filter drop-shadow-[0_0_20px_rgba(26,159,255,0.4)]">DNA</span>
             </h2>
             <p className="text-slate-400 mb-10 text-lg md:text-xl text-center max-w-2xl font-medium">
                 Based on the tags of your most played games.
@@ -37,7 +37,7 @@ export default function Page4({ topGenres }: Page4Props) {
                                 cornerRadius={8}
                             >
                                 {displayGenres.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
                                 ))}
                             </Pie>
                             
